@@ -1,21 +1,26 @@
 package smap_test
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/daved/smap"
 )
 
-// Destination type for testing
 type Config struct {
 	AISvcURL string `smap:"EV.AISvcURL|FV.Service.URL"`
 	AISvcKey string `smap:"EV.AISvcKey"`
 	Extra    string `smap:"FV.Extra"`
-	NoTag    string // No smap tag, should be skipped
+	NoTag    string
 }
 
-// Source type for testing
+type ConfigMismatch struct {
+	AISvcURL string `smap:"EV.AISvcURL"`
+	AISvcKey string `smap:"EV.AISvcKey"`
+	Extra    int    `smap:"FV.Extra"` // int vs. string for type mismatch
+}
+
 type Sources struct {
 	EV *EnvVars
 	FV *FileVals
@@ -27,20 +32,17 @@ type EnvVars struct {
 }
 
 type FileVals struct {
-	Service struct {
-		URL string
-	}
-	Extra string
+	Service struct{ URL string }
+	Extra   string
 }
 
 func TestMerge_Surface(t *testing.T) {
 	tests := []struct {
 		name    string
-		dst     *Config
+		dst     interface{}
 		src     interface{}
-		want    Config
-		wantErr bool
-		errMsg  string
+		want    interface{}
+		wantErr error
 	}{
 		{
 			name: "struct instance source",
@@ -50,12 +52,12 @@ func TestMerge_Surface(t *testing.T) {
 				FV: &FileVals{Service: struct{ URL string }{URL: "file-url"}, Extra: "file-extra"},
 			},
 			want: Config{
-				AISvcURL: "file-url", // FV overrides EV due to precedence
+				AISvcURL: "file-url",
 				AISvcKey: "env-key",
 				Extra:    "file-extra",
-				NoTag:    "", // Should remain empty
+				NoTag:    "",
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name: "pointer to struct source",
@@ -68,30 +70,44 @@ func TestMerge_Surface(t *testing.T) {
 				AISvcURL: "file-url",
 				AISvcKey: "env-key",
 				Extra:    "file-extra",
-				NoTag:    "", // Should remain empty
+				NoTag:    "",
 			},
-			wantErr: false,
+			wantErr: nil,
 		},
 		{
 			name:    "nil pointer source",
 			dst:     &Config{},
 			src:     (*Sources)(nil),
-			want:    Config{}, // No changes expected due to error
-			wantErr: true,
-			errMsg:  "src must not be nil",
+			want:    Config{},
+			wantErr: smap.ErrInvalidSrc,
+		},
+		{
+			name: "invalid path",
+			dst:  &Config{},
+			src: Sources{
+				EV: &EnvVars{AISvcKey: "env-key"},
+			},
+			want:    Config{},
+			wantErr: smap.ErrInvalidPath,
+		},
+		{
+			name: "incompatible types",
+			dst:  &ConfigMismatch{},
+			src: Sources{
+				EV: &EnvVars{AISvcURL: "env-url", AISvcKey: "env-key"},
+				FV: &FileVals{Extra: "file-extra"},
+			},
+			want:    ConfigMismatch{},
+			wantErr: smap.ErrFieldTypesIncompatible,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := smap.Merge(tt.dst, tt.src)
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("Merge() error = nil, want error")
-					return
-				}
-				if err.Error() != tt.errMsg {
-					t.Errorf("Merge() error = %q, want %q", err.Error(), tt.errMsg)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("Merge() error = %v, want %v", err, tt.wantErr)
 				}
 				return
 			}
@@ -99,8 +115,8 @@ func TestMerge_Surface(t *testing.T) {
 				t.Errorf("Merge() error = %v, want nil", err)
 				return
 			}
-			if !reflect.DeepEqual(*tt.dst, tt.want) {
-				t.Errorf("Merge() dst = %+v, want %+v", *tt.dst, tt.want)
+			if !reflect.DeepEqual(reflect.ValueOf(tt.dst).Elem().Interface(), tt.want) {
+				t.Errorf("Merge() dst = %+v, want %+v", reflect.ValueOf(tt.dst).Elem().Interface(), tt.want)
 			}
 		})
 	}

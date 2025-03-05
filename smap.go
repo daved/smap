@@ -1,60 +1,99 @@
+// Package smap provides functionality to merge struct fields based on struct tags.
 package smap
 
 import (
-	"fmt"
+	"errors"
 	"reflect"
 	"strings"
 )
 
+// Errors for API consumers to detect via errors.Is.
+var (
+	ErrInvalidDst             = errors.New("invalid dst: non-nil struct ptr required")
+	ErrInvalidSrc             = errors.New("invalid src: struct or non-nil ptr required")
+	ErrInvalidPath            = errors.New("invalid path in tag")
+	ErrFieldTypesIncompatible = errors.New("source field type is incompatible with destination field type")
+)
+
 // Merge merges values from src into dst based on dst's smap struct tags.
 func Merge(dst, src interface{}) error {
+	dstVal, err := validateDst(dst)
+	if err != nil {
+		return err
+	}
+
+	srcVal, err := validateSrc(src)
+	if err != nil {
+		return err
+	}
+
+	return mergeFields(dstVal, srcVal)
+}
+
+// validateDst ensures dst is a non-nil pointer to a struct.
+func validateDst(dst interface{}) (reflect.Value, error) {
 	dstVal := reflect.ValueOf(dst)
 	if dstVal.Kind() != reflect.Ptr || dstVal.IsNil() {
-		return fmt.Errorf("dst must be a non-nil pointer")
+		return reflect.Value{}, ErrInvalidDst
 	}
 	dstVal = dstVal.Elem()
 	if dstVal.Kind() != reflect.Struct {
-		return fmt.Errorf("dst must point to a struct")
+		return reflect.Value{}, ErrInvalidDst
 	}
+	return dstVal, nil
+}
 
+// validateSrc ensures src is a struct or non-nil pointer to a struct.
+func validateSrc(src interface{}) (reflect.Value, error) {
 	srcVal := reflect.ValueOf(src)
-	// Handle src as either a struct or a pointer to a struct
 	if srcVal.Kind() == reflect.Ptr {
 		if srcVal.IsNil() {
-			return fmt.Errorf("src must not be nil")
+			return reflect.Value{}, ErrInvalidSrc
 		}
 		srcVal = srcVal.Elem()
 	}
 	if srcVal.Kind() != reflect.Struct {
-		return fmt.Errorf("src must be a struct or pointer to a struct")
+		return reflect.Value{}, ErrInvalidSrc
 	}
+	return srcVal, nil
+}
 
+// mergeFields applies the smap tag mappings from srcVal to dstVal.
+func mergeFields(dstVal, srcVal reflect.Value) error {
 	dstType := dstVal.Type()
 	for i := 0; i < dstType.NumField(); i++ {
 		field := dstType.Field(i)
 		smapTag := field.Tag.Get("smap")
 		if smapTag == "" {
-			continue // Skip fields without smap tag
+			continue
 		}
-
-		// Split the smap tag by "|" for precedence
-		srcPaths := strings.Split(smapTag, "|")
-		var finalValue reflect.Value
-		for _, path := range srcPaths {
-			if path == "" {
-				continue
-			}
-			value := lookupField(srcVal, strings.Split(path, "."))
-			if value.IsValid() {
-				finalValue = value
-			}
-		}
-
-		if finalValue.IsValid() && finalValue.Type().AssignableTo(field.Type) {
-			dstVal.Field(i).Set(finalValue)
+		if err := mergeField(dstVal.Field(i), srcVal, smapTag); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+// mergeField sets dstField based on the smap tag paths in srcVal.
+func mergeField(dstField, srcVal reflect.Value, smapTag string) error {
+	srcPaths := strings.Split(smapTag, "|")
+	var finalValue reflect.Value
+	for _, path := range srcPaths {
+		if path == "" {
+			continue
+		}
+		value := lookupField(srcVal, strings.Split(path, "."))
+		if value.IsValid() {
+			finalValue = value
+		}
+	}
+	if !finalValue.IsValid() {
+		return ErrInvalidPath
+	}
+	if !finalValue.Type().AssignableTo(dstField.Type()) {
+		return ErrFieldTypesIncompatible
+	}
+	dstField.Set(finalValue)
 	return nil
 }
 
@@ -64,7 +103,7 @@ func lookupField(srcVal reflect.Value, parts []string) reflect.Value {
 	for _, part := range parts {
 		if current.Kind() == reflect.Ptr {
 			if current.IsNil() {
-				return reflect.Value{}
+				return reflect.Value{} // Skipping nil pointer errors for now
 			}
 			current = current.Elem()
 		}
