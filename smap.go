@@ -17,12 +17,12 @@ var (
 
 // Merge merges values from src into dst based on dst's smap struct tags.
 func Merge(dst, src interface{}) error {
-	dstVal, err := validateDst(dst)
+	dstVal, err := makeDstValue(dst)
 	if err != nil {
 		return err
 	}
 
-	srcVal, err := validateSrc(src)
+	srcVal, err := makeSrcValue(src)
 	if err != nil {
 		return err
 	}
@@ -30,8 +30,8 @@ func Merge(dst, src interface{}) error {
 	return mergeFields(dstVal, srcVal)
 }
 
-// validateDst ensures dst is a non-nil pointer to a struct.
-func validateDst(dst interface{}) (reflect.Value, error) {
+// makeDstValue ensures dst is a non-nil pointer to a struct and returns its value.
+func makeDstValue(dst interface{}) (reflect.Value, error) {
 	dstVal := reflect.ValueOf(dst)
 	if dstVal.Kind() != reflect.Ptr || dstVal.IsNil() {
 		return reflect.Value{}, ErrInvalidDst
@@ -43,8 +43,8 @@ func validateDst(dst interface{}) (reflect.Value, error) {
 	return dstVal, nil
 }
 
-// validateSrc ensures src is a struct or non-nil pointer to a struct.
-func validateSrc(src interface{}) (reflect.Value, error) {
+// makeSrcValue ensures src is a struct or non-nil pointer to a struct and returns its value.
+func makeSrcValue(src interface{}) (reflect.Value, error) {
 	srcVal := reflect.ValueOf(src)
 	if srcVal.Kind() == reflect.Ptr {
 		if srcVal.IsNil() {
