@@ -12,11 +12,11 @@ const TagKey = "smap"
 
 // Errors for API consumers to detect via errors.Is.
 var (
-	ErrInvalidDst             = errors.New("invalid dst: non-nil struct ptr required")
-	ErrInvalidSrc             = errors.New("invalid src: struct or non-nil ptr required")
-	ErrInvalidPath            = errors.New("invalid path in tag")
+	ErrDstInvalid             = errors.New("invalid dst: non-nil struct ptr required")
+	ErrSrcInvalid             = errors.New("invalid src: struct or non-nil ptr required")
+	ErrTagInvalid             = errors.New("invalid path in tag")
 	ErrFieldTypesIncompatible = errors.New("source field type is incompatible with destination field type")
-	ErrEmptyTag               = errors.New("empty smap tag")
+	ErrTagEmpty               = errors.New("empty smap tag")
 )
 
 // Merge merges values from src into dst based on dst's smap struct tags.
@@ -38,11 +38,11 @@ func Merge(dst, src interface{}) error {
 func makeDstValue(dst interface{}) (reflect.Value, error) {
 	dstVal := reflect.ValueOf(dst)
 	if dstVal.Kind() != reflect.Ptr || dstVal.IsNil() {
-		return reflect.Value{}, ErrInvalidDst
+		return reflect.Value{}, ErrDstInvalid
 	}
 	dstVal = dstVal.Elem()
 	if dstVal.Kind() != reflect.Struct {
-		return reflect.Value{}, ErrInvalidDst
+		return reflect.Value{}, ErrDstInvalid
 	}
 	return dstVal, nil
 }
@@ -52,12 +52,12 @@ func makeSrcValue(src interface{}) (reflect.Value, error) {
 	srcVal := reflect.ValueOf(src)
 	if srcVal.Kind() == reflect.Ptr {
 		if srcVal.IsNil() {
-			return reflect.Value{}, ErrInvalidSrc
+			return reflect.Value{}, ErrSrcInvalid
 		}
 		srcVal = srcVal.Elem()
 	}
 	if srcVal.Kind() != reflect.Struct {
-		return reflect.Value{}, ErrInvalidSrc
+		return reflect.Value{}, ErrSrcInvalid
 	}
 	return srcVal, nil
 }
@@ -71,8 +71,11 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 		if !ok {
 			continue
 		}
-		srcPaths := makeSrcPaths(smapTag)
-		if err := mergeField(dstVal.Field(i), srcVal, srcPaths); err != nil {
+		srcPathsParts, err := makeSrcPathsParts(smapTag)
+		if err != nil {
+			return err
+		}
+		if err := mergeField(dstVal.Field(i), srcVal, srcPathsParts); err != nil {
 			return err
 		}
 	}
@@ -80,20 +83,20 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 }
 
 // mergeField sets dstField based on the smap tag paths in srcVal.
-func mergeField(dstField, srcVal reflect.Value, srcPaths [][]string) error {
-	if len(srcPaths) == 0 {
-		return ErrEmptyTag
+func mergeField(dstField, srcVal reflect.Value, srcPathsParts [][]string) error {
+	if len(srcPathsParts) == 0 {
+		return ErrTagEmpty
 	}
 
 	var finalValue reflect.Value
-	for _, pathParts := range srcPaths {
+	for _, pathParts := range srcPathsParts {
 		value := lookupField(srcVal, pathParts)
 		if value.IsValid() {
 			finalValue = value
 		}
 	}
 	if !finalValue.IsValid() {
-		return ErrInvalidPath
+		return ErrTagInvalid
 	}
 	if !finalValue.Type().AssignableTo(dstField.Type()) {
 		return ErrFieldTypesIncompatible
@@ -102,17 +105,26 @@ func mergeField(dstField, srcVal reflect.Value, srcPaths [][]string) error {
 	return nil
 }
 
-// makeSrcPaths splits a smap tag into a slice of path segments.
-func makeSrcPaths(tag string) [][]string {
+// makeSrcPathsParts splits a smap tag into a slice of path segments, erroring on malformed tags.
+func makeSrcPathsParts(tag string) ([][]string, error) {
 	paths := strings.Split(tag, "|")
-	var srcPaths [][]string
+	var srcPathsParts [][]string
 	for _, path := range paths {
 		if path == "" {
 			continue
 		}
-		srcPaths = append(srcPaths, strings.Split(path, "."))
+		parts := strings.Split(path, ".")
+		for _, part := range parts {
+			if part == "" {
+				return nil, ErrTagInvalid // Empty segment (e.g., "Foo..Bar")
+			}
+		}
+		srcPathsParts = append(srcPathsParts, parts)
 	}
-	return srcPaths
+	if len(srcPathsParts) == 0 {
+		return nil, ErrTagEmpty // Tag is empty or only empty segments (e.g., "", "|")
+	}
+	return srcPathsParts, nil
 }
 
 // lookupField navigates srcVal using the path parts and returns the value.
