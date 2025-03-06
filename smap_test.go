@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestMakeTagPathsParts(t *testing.T) {
+func TestUnitMakeTagPathsParts(t *testing.T) {
 	tests := []struct {
 		name    string
 		tag     string

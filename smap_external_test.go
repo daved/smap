@@ -40,7 +40,7 @@ type FileVals struct {
 	Extra   string
 }
 
-func TestMerge_Surface(t *testing.T) {
+func TestSurfaceMerge(t *testing.T) {
 	tests := []struct {
 		name    string
 		dst     interface{}
