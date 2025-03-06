@@ -7,12 +7,16 @@ import (
 	"strings"
 )
 
+// TagKey is the struct tag key used to define source paths.
+const TagKey = "smap"
+
 // Errors for API consumers to detect via errors.Is.
 var (
 	ErrInvalidDst             = errors.New("invalid dst: non-nil struct ptr required")
 	ErrInvalidSrc             = errors.New("invalid src: struct or non-nil ptr required")
 	ErrInvalidPath            = errors.New("invalid path in tag")
 	ErrFieldTypesIncompatible = errors.New("source field type is incompatible with destination field type")
+	ErrEmptyTag               = errors.New("empty smap tag")
 )
 
 // Merge merges values from src into dst based on dst's smap struct tags.
@@ -63,11 +67,12 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 	dstType := dstVal.Type()
 	for i := 0; i < dstType.NumField(); i++ {
 		field := dstType.Field(i)
-		smapTag := field.Tag.Get("smap")
-		if smapTag == "" {
+		smapTag, ok := field.Tag.Lookup(TagKey)
+		if !ok {
 			continue
 		}
-		if err := mergeField(dstVal.Field(i), srcVal, smapTag); err != nil {
+		srcPaths := makeSrcPaths(smapTag)
+		if err := mergeField(dstVal.Field(i), srcVal, srcPaths); err != nil {
 			return err
 		}
 	}
@@ -75,14 +80,14 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 }
 
 // mergeField sets dstField based on the smap tag paths in srcVal.
-func mergeField(dstField, srcVal reflect.Value, smapTag string) error {
-	srcPaths := strings.Split(smapTag, "|")
+func mergeField(dstField, srcVal reflect.Value, srcPaths [][]string) error {
+	if len(srcPaths) == 0 {
+		return ErrEmptyTag
+	}
+
 	var finalValue reflect.Value
-	for _, path := range srcPaths {
-		if path == "" {
-			continue
-		}
-		value := lookupField(srcVal, strings.Split(path, "."))
+	for _, pathParts := range srcPaths {
+		value := lookupField(srcVal, pathParts)
 		if value.IsValid() {
 			finalValue = value
 		}
@@ -95,6 +100,19 @@ func mergeField(dstField, srcVal reflect.Value, smapTag string) error {
 	}
 	dstField.Set(finalValue)
 	return nil
+}
+
+// makeSrcPaths splits a smap tag into a slice of path segments.
+func makeSrcPaths(tag string) [][]string {
+	paths := strings.Split(tag, "|")
+	var srcPaths [][]string
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		srcPaths = append(srcPaths, strings.Split(path, "."))
+	}
+	return srcPaths
 }
 
 // lookupField navigates srcVal using the path parts and returns the value.

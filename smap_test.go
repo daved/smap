@@ -21,6 +21,10 @@ type ConfigMismatch struct {
 	Extra    int    `smap:"FV.Extra"` // int vs. string for type mismatch
 }
 
+type ConfigEmptyTag struct {
+	Empty string `smap:""` // Empty tag to trigger ErrEmptyTag
+}
+
 type Sources struct {
 	EV *EnvVars
 	FV *FileVals
@@ -99,6 +103,13 @@ func TestMerge_Surface(t *testing.T) {
 			},
 			want:    ConfigMismatch{},
 			wantErr: smap.ErrFieldTypesIncompatible,
+		},
+		{
+			name:    "empty tag",
+			dst:     &ConfigEmptyTag{},
+			src:     Sources{},
+			want:    ConfigEmptyTag{},
+			wantErr: smap.ErrEmptyTag,
 		},
 	}
 
