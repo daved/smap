@@ -71,11 +71,11 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 		if !ok {
 			continue
 		}
-		srcPathsParts, err := makeSrcPathsParts(smapTag)
+		tagPathsParts, err := makeTagPathsParts(smapTag)
 		if err != nil {
 			return err
 		}
-		if err := mergeField(dstVal.Field(i), srcVal, srcPathsParts); err != nil {
+		if err := mergeField(dstVal.Field(i), srcVal, tagPathsParts); err != nil {
 			return err
 		}
 	}
@@ -83,13 +83,13 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 }
 
 // mergeField sets dstField based on the smap tag paths in srcVal.
-func mergeField(dstField, srcVal reflect.Value, srcPathsParts [][]string) error {
-	if len(srcPathsParts) == 0 {
+func mergeField(dstField, srcVal reflect.Value, tagPathsParts [][]string) error {
+	if len(tagPathsParts) == 0 {
 		return ErrTagEmpty
 	}
 
 	var finalValue reflect.Value
-	for _, pathParts := range srcPathsParts {
+	for _, pathParts := range tagPathsParts {
 		value := lookupField(srcVal, pathParts)
 		if value.IsValid() {
 			finalValue = value
@@ -105,10 +105,10 @@ func mergeField(dstField, srcVal reflect.Value, srcPathsParts [][]string) error 
 	return nil
 }
 
-// makeSrcPathsParts splits a smap tag into a slice of path segments, erroring on malformed tags.
-func makeSrcPathsParts(tag string) ([][]string, error) {
+// makeTagPathsParts splits a smap tag into a slice of path segments, erroring on malformed tags.
+func makeTagPathsParts(tag string) ([][]string, error) {
 	paths := strings.Split(tag, "|")
-	var srcPathsParts [][]string
+	var tagPathsParts [][]string
 	for _, path := range paths {
 		if path == "" {
 			continue
@@ -119,12 +119,12 @@ func makeSrcPathsParts(tag string) ([][]string, error) {
 				return nil, ErrTagInvalid // Empty segment (e.g., "Foo..Bar")
 			}
 		}
-		srcPathsParts = append(srcPathsParts, parts)
+		tagPathsParts = append(tagPathsParts, parts)
 	}
-	if len(srcPathsParts) == 0 {
+	if len(tagPathsParts) == 0 {
 		return nil, ErrTagEmpty // Tag is empty or only empty segments (e.g., "", "|")
 	}
-	return srcPathsParts, nil
+	return tagPathsParts, nil
 }
 
 // lookupField navigates srcVal using the path parts and returns the value.

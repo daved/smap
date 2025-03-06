@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestMakeSrcPathsParts(t *testing.T) {
+func TestMakeTagPathsParts(t *testing.T) {
 	tests := []struct {
 		name    string
 		tag     string
@@ -77,22 +77,22 @@ func TestMakeSrcPathsParts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := makeSrcPathsParts(tt.tag)
+			got, err := makeTagPathsParts(tt.tag)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("makeSrcPathsParts() error = %v, want %v", err, tt.wantErr)
+					t.Errorf("makeTagPathsParts() error = %v, want %v", err, tt.wantErr)
 				}
 				if got != nil {
-					t.Errorf("makeSrcPathsParts() got = %v, want nil on error", got)
+					t.Errorf("makeTagPathsParts() got = %v, want nil on error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("makeSrcPathsParts() error = %v, want nil", err)
+				t.Errorf("makeTagPathsParts() error = %v, want nil", err)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("makeSrcPathsParts() = %v, want %v", got, tt.want)
+				t.Errorf("makeTagPathsParts() = %v, want %v", got, tt.want)
 			}
 		})
 	}
