@@ -25,6 +25,10 @@ type ConfigEmptyTag struct {
 	Empty string `smap:""` // Empty tag to trigger ErrTagEmpty
 }
 
+type ConfigNilPath struct {
+	NilPath string `smap:"EV.Nil.URL"` // Nil pointer in path
+}
+
 type Sources struct {
 	EV *EnvVars
 	FV *FileVals
@@ -33,6 +37,7 @@ type Sources struct {
 type EnvVars struct {
 	AISvcURL string
 	AISvcKey string
+	Nil      *struct{ URL string } // Nil pointer
 }
 
 type FileVals struct {
@@ -92,7 +97,7 @@ func TestSurfaceMerge(t *testing.T) {
 				EV: &EnvVars{AISvcKey: "env-key"},
 			},
 			want:    Config{},
-			wantErr: smap.ErrTagInvalid,
+			wantErr: smap.ErrTagPathUnresolvable, // Updated from ErrTagInvalid
 		},
 		{
 			name: "incompatible types",
@@ -111,12 +116,25 @@ func TestSurfaceMerge(t *testing.T) {
 			want:    ConfigEmptyTag{},
 			wantErr: smap.ErrTagEmpty,
 		},
+		{
+			name: "nil path",
+			dst:  &ConfigNilPath{},
+			src: Sources{
+				EV: &EnvVars{Nil: nil}, // Nil pointer in path
+			},
+			want:    ConfigNilPath{},
+			wantErr: smap.ErrTagPathUnresolvable,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := smap.Merge(tt.dst, tt.src)
 			if tt.wantErr != nil {
+				if err == nil {
+					t.Errorf("Merge() error = nil, want %v", tt.wantErr)
+					return
+				}
 				if !errors.Is(err, tt.wantErr) {
 					t.Errorf("Merge() error = %v, want %v", err, tt.wantErr)
 				}
