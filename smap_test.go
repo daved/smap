@@ -6,93 +6,118 @@ import (
 	"testing"
 )
 
-func TestUnitMakeTagPathsParts(t *testing.T) {
+func TestUnitNewSTag(t *testing.T) {
 	tests := []struct {
 		name    string
-		tag     string
-		want    tagPathsParts
+		rawTag  string
+		want    *sTag
 		wantErr error
 	}{
 		{
-			name:    "single path",
-			tag:     "EV.AISvcURL",
-			want:    tagPathsParts{{"EV", "AISvcURL"}},
+			name:   "single path",
+			rawTag: "EV.AISvcURL",
+			want: &sTag{
+				pathsParts: tagPathsParts{{"EV", "AISvcURL"}},
+				opts:       nil,
+			},
 			wantErr: nil,
 		},
 		{
-			name:    "multiple paths",
-			tag:     "EV.AISvcURL|FV.Service.URL",
-			want:    tagPathsParts{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
+			name:   "multiple paths",
+			rawTag: "EV.AISvcURL|FV.Service.URL",
+			want: &sTag{
+				pathsParts: tagPathsParts{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
+				opts:       nil,
+			},
 			wantErr: nil,
 		},
 		{
 			name:    "empty tag",
-			tag:     "",
+			rawTag:  "",
 			want:    nil,
 			wantErr: ErrTagEmpty,
 		},
 		{
 			name:    "only separators",
-			tag:     "|",
+			rawTag:  "|",
 			want:    nil,
 			wantErr: ErrTagEmpty,
 		},
 		{
 			name:    "multiple empty segments",
-			tag:     "||",
+			rawTag:  "||",
 			want:    nil,
 			wantErr: ErrTagEmpty,
 		},
 		{
-			name:    "empty segment in middle",
-			tag:     "EV.AISvcURL||FV.Service.URL",
-			want:    tagPathsParts{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
+			name:   "empty segment in middle",
+			rawTag: "EV.AISvcURL||FV.Service.URL",
+			want: &sTag{
+				pathsParts: tagPathsParts{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
+				opts:       nil,
+			},
 			wantErr: nil,
 		},
 		{
 			name:    "double dot",
-			tag:     "Foo..Bar",
+			rawTag:  "Foo..Bar",
 			want:    nil,
 			wantErr: ErrTagInvalid,
 		},
 		{
 			name:    "trailing dot",
-			tag:     "Foo.Bar.",
+			rawTag:  "Foo.Bar.",
 			want:    nil,
 			wantErr: ErrTagInvalid,
 		},
 		{
 			name:    "leading dot",
-			tag:     ".Foo.Bar",
+			rawTag:  ".Foo.Bar",
 			want:    nil,
 			wantErr: ErrTagInvalid,
 		},
 		{
 			name:    "mixed valid and invalid",
-			tag:     "EV.AISvcURL|Foo..Bar",
+			rawTag:  "EV.AISvcURL|Foo..Bar",
 			want:    nil,
 			wantErr: ErrTagInvalid,
+		},
+		{
+			name:   "path with hydrate option",
+			rawTag: "EV.AISvcURL,hydrate",
+			want: &sTag{
+				pathsParts: tagPathsParts{{"EV", "AISvcURL"}},
+				opts:       []string{"hydrate"},
+			},
+			wantErr: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := makeTagPathsParts(tt.tag)
+			got, err := newSTag(tt.rawTag)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("makeTagPathsParts() error = %v, want %v", err, tt.wantErr)
+					t.Errorf("newSTag() error = %v, want %v", err, tt.wantErr)
 				}
 				if got != nil {
-					t.Errorf("makeTagPathsParts() got = %v, want nil on error", got)
+					t.Errorf("newSTag() got = %v, want nil on error", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("makeTagPathsParts() error = %v, want nil", err)
+				t.Errorf("newSTag() error = %v, want nil", err)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("makeTagPathsParts() = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(got.pathsParts, tt.want.pathsParts) {
+				t.Errorf("newSTag().pathsParts = %v, want %v", got.pathsParts, tt.want.pathsParts)
+			}
+			if !reflect.DeepEqual(got.opts, tt.want.opts) {
+				t.Errorf("newSTag().opts = %v, want %v", got.opts, tt.want.opts)
+			}
+			expectedStr := tt.want.String()
+			if got.String() != expectedStr {
+				t.Errorf("newSTag().String() = %q, want %q", got.String(), expectedStr)
 			}
 		})
 	}

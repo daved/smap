@@ -1,7 +1,11 @@
 // Package smap provides functionality to merge struct fields based on struct tags.
 package smap
 
-import "reflect"
+import (
+	"reflect"
+
+	"github.com/daved/vtypes"
+)
 
 // Merge merges values from src into dst based on dst's smap struct tags.
 func Merge(dst, src interface{}) error {
@@ -51,15 +55,15 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 	dstType := dstVal.Type()
 	for i := 0; i < dstType.NumField(); i++ {
 		field := dstType.Field(i)
-		smapTag, ok := field.Tag.Lookup(TagKey)
+		rawTag, ok := field.Tag.Lookup(TagKey)
 		if !ok {
 			continue
 		}
-		pathsParts, err := makeTagPathsParts(smapTag)
+		tag, err := newSTag(rawTag)
 		if err != nil {
 			return err
 		}
-		if err := mergeField(dstVal.Field(i), srcVal, pathsParts); err != nil {
+		if err := mergeField(dstVal.Field(i), srcVal, tag); err != nil {
 			return err
 		}
 	}
@@ -67,13 +71,13 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 }
 
 // mergeField sets dstField based on the smap tag paths in srcVal.
-func mergeField(dstField, srcVal reflect.Value, pathsParts tagPathsParts) error {
-	if len(pathsParts) == 0 {
+func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
+	if len(tag.pathsParts) == 0 {
 		return NewMergeFieldError(ErrTagEmpty, "", dstField.Type().String(), "")
 	}
 
 	var finalValue reflect.Value
-	for _, pathParts := range pathsParts {
+	for _, pathParts := range tag.pathsParts {
 		value, err := lookUpField(srcVal, pathParts)
 		if err != nil {
 			return NewMergeFieldError(err, pathParts.String(), dstField.Type().String(), "")
@@ -83,10 +87,22 @@ func mergeField(dstField, srcVal reflect.Value, pathsParts tagPathsParts) error 
 		}
 	}
 	if !finalValue.IsValid() {
-		return NewMergeFieldError(ErrTagInvalid, pathsParts.String(), dstField.Type().String(), "")
+		return NewMergeFieldError(ErrTagInvalid, tag.String(), dstField.Type().String(), "")
 	}
+
+	// Handle hydration if requested and source is a string
+	if tag.HasHydrate() && finalValue.Kind() == reflect.String {
+		// Create a new value of the destination type to hydrate into
+		hydratedPtr := reflect.New(dstField.Type())
+		hydrated := hydratedPtr.Interface()
+		if err := vtypes.Hydrate(hydrated, finalValue.String()); err != nil {
+			return NewMergeFieldError(err, tag.String(), dstField.Type().String(), finalValue.Type().String())
+		}
+		finalValue = hydratedPtr.Elem()
+	}
+
 	if !finalValue.Type().AssignableTo(dstField.Type()) {
-		return NewMergeFieldError(ErrFieldTypesIncompatible, pathsParts.String(), dstField.Type().String(), finalValue.Type().String())
+		return NewMergeFieldError(ErrFieldTypesIncompatible, tag.String(), dstField.Type().String(), finalValue.Type().String())
 	}
 	dstField.Set(finalValue)
 	return nil

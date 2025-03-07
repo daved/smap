@@ -1,6 +1,8 @@
 package smap
 
-import "strings"
+import (
+	"strings"
+)
 
 // TagKey is the struct tag key used to define source paths.
 const TagKey = "smap"
@@ -25,9 +27,38 @@ func (p tagPathsParts) String() string {
 	return strings.Join(paths, "|")
 }
 
-// makeTagPathsParts splits a smap tag into a slice of path segments, erroring on malformed tags.
-func makeTagPathsParts(tag string) (tagPathsParts, error) {
-	paths := strings.Split(tag, "|")
+// sTag represents a parsed smap tag with paths and options.
+type sTag struct {
+	pathsParts tagPathsParts
+	opts       []string
+}
+
+// String recreates the original smap tag string.
+func (t *sTag) String() string {
+	if len(t.opts) == 0 {
+		return t.pathsParts.String()
+	}
+	return t.pathsParts.String() + "," + strings.Join(t.opts, ",")
+}
+
+// HasHydrate checks if the "hydrate" option is present.
+func (t *sTag) HasHydrate() bool {
+	for _, opt := range t.opts {
+		if opt == "hydrate" {
+			return true
+		}
+	}
+	return false
+}
+
+// newSTag constructs an sTag from a tag string.
+func newSTag(tag string) (*sTag, error) {
+	// Split tag into paths and options (after the first comma)
+	parts := strings.SplitN(tag, ",", 2)
+	pathsStr := strings.TrimSpace(parts[0])
+
+	// Parse paths
+	paths := strings.Split(pathsStr, "|")
 	var pathsParts tagPathsParts
 	for _, path := range paths {
 		if path == "" {
@@ -44,5 +75,22 @@ func makeTagPathsParts(tag string) (tagPathsParts, error) {
 	if len(pathsParts) == 0 {
 		return nil, ErrTagEmpty // Tag is empty or only empty segments (e.g., "", "|")
 	}
-	return pathsParts, nil
+
+	// Parse options if present
+	var opts []string
+	if len(parts) > 1 {
+		opts = strings.Split(strings.TrimSpace(parts[1]), ",")
+		for i, opt := range opts {
+			opt = strings.TrimSpace(opt)
+			if opt == "" {
+				return nil, ErrTagInvalid // Empty option (e.g., "path,,hydrate")
+			}
+			opts[i] = opt
+		}
+	}
+
+	return &sTag{
+		pathsParts: pathsParts,
+		opts:       opts,
+	}, nil
 }

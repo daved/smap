@@ -29,6 +29,10 @@ type ConfigNilPath struct {
 	NilPath string `smap:"EV.Nil.URL"` // Nil pointer in path
 }
 
+type ConfigHydrate struct {
+	Count int `smap:"EV.Count,hydrate"` // String to int hydration
+}
+
 type Sources struct {
 	EV *EnvVars
 	FV *FileVals
@@ -38,6 +42,7 @@ type EnvVars struct {
 	AISvcURL string
 	AISvcKey string
 	Nil      *struct{ URL string } // Nil pointer
+	Count    string                // String to hydrate
 }
 
 type FileVals struct {
@@ -124,6 +129,15 @@ func TestSurfaceMerge(t *testing.T) {
 			},
 			want:    ConfigNilPath{},
 			wantErr: smap.ErrTagPathUnresolvable,
+		},
+		{
+			name: "hydrate string to int",
+			dst:  &ConfigHydrate{},
+			src: Sources{
+				EV: &EnvVars{Count: "42"},
+			},
+			want:    ConfigHydrate{Count: 42},
+			wantErr: nil,
 		},
 	}
 
