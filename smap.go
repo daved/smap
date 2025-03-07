@@ -85,9 +85,9 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 
 	if !finalValue.IsValid() {
 		if dstField.Kind() == reflect.Ptr {
-			return nil // Leave nil for unset pointers
+			return nil
 		}
-		return nil // Non-pointers stay zero
+		return nil
 	}
 
 	if tag.HasHydrate() && finalValue.Kind() == reflect.String {
@@ -208,10 +208,12 @@ func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, e
 
 // lookupStructFieldOrMethod handles struct field or method lookup.
 func lookupStructFieldOrMethod(value, current reflect.Value, part string, isLastPart bool) (reflect.Value, error) {
-	// Try field first
 	field := value.FieldByName(part)
 	typ := value.Type()
-	if f, ok := typ.FieldByName(part); ok && field.IsValid() && f.PkgPath == "" { // Check if exported
+	if f, ok := typ.FieldByName(part); ok && field.IsValid() && f.PkgPath == "" {
+		if field.Kind() == reflect.Ptr && field.IsNil() {
+			return reflect.Value{}, errKeepLooking
+		}
 		current = field
 		if isLastPart {
 			for current.Kind() == reflect.Ptr && !current.IsNil() {
