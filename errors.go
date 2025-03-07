@@ -14,7 +14,7 @@ var (
 	ErrTagEmpty               = errors.New("empty smap tag")
 	ErrTagPathNotFound        = errors.New("tag path field not found")
 	ErrTagPathEmpty           = errors.New("tag path is empty")
-	ErrTagPathInvalidKeyType  = errors.New("tag path references map with non-string key type")
+	ErrTagPathInvalidKeyType  = errors.New("tag path key type cannot be converted") // Updated
 	// errKeepLooking is unexported for internal control flow
 	errKeepLooking = errors.New("keep looking for next path")
 )

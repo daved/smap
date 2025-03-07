@@ -62,6 +62,9 @@ type EnvVars struct {
 	URL      *string
 	Data     map[string]string
 	Value    string
+	IntMap   map[int]string  // Added
+	FloatMap map[float64]int // Added
+	Users    []string        // Added
 }
 
 type FileVals struct {

@@ -154,6 +154,10 @@ func TestUnitLookUpField(t *testing.T) {
 		Inner    Inner
 		Ptr      *Inner
 		InnerPtr *Inner
+		IntMap   map[int]string
+		FloatMap map[float64]int
+		Users    []string
+		BoolMap  map[bool]string // Added for unsupported key type
 	}
 	type MapOuter struct {
 		Data map[string]string
@@ -166,6 +170,7 @@ func TestUnitLookUpField(t *testing.T) {
 		want      interface{}
 		wantErr   error
 	}{
+		// Existing tests unchanged until "non-string map key"
 		{
 			name:      "valid struct path",
 			src:       Outer{Inner: Inner{URL: "http://example.com"}},
@@ -230,11 +235,11 @@ func TestUnitLookUpField(t *testing.T) {
 			wantErr:   errKeepLooking,
 		},
 		{
-			name:      "non-string map key",
-			src:       struct{ M map[int]string }{M: map[int]string{1: "value"}},
-			pathParts: tagPathParts{"M", "1"},
-			want:      nil,
-			wantErr:   ErrTagPathInvalidKeyType,
+			name:      "int map key", // Renamed from "non-string map key"
+			src:       Outer{IntMap: map[int]string{1: "value"}},
+			pathParts: tagPathParts{"IntMap", "1"},
+			want:      "value",
+			wantErr:   nil, // Updated expectation
 		},
 		{
 			name:      "method one value",
@@ -250,6 +255,34 @@ func TestUnitLookUpField(t *testing.T) {
 			want:      nil,
 			wantErr:   errors.New("method error"),
 		},
+		{
+			name:      "float map key",
+			src:       Outer{FloatMap: map[float64]int{1.5: 42}},
+			pathParts: tagPathParts{"FloatMap", "1.5"},
+			want:      42,
+			wantErr:   nil,
+		},
+		{
+			name:      "slice index",
+			src:       Outer{Users: []string{"zero", "one", "two"}},
+			pathParts: tagPathParts{"Users", "1"},
+			want:      "one",
+			wantErr:   nil,
+		},
+		{
+			name:      "slice out of bounds",
+			src:       Outer{Users: []string{"zero", "one"}},
+			pathParts: tagPathParts{"Users", "2"},
+			want:      nil,
+			wantErr:   errKeepLooking,
+		},
+		{
+			name:      "unsupported map key type",
+			src:       Outer{BoolMap: map[bool]string{true: "yes"}},
+			pathParts: tagPathParts{"BoolMap", "true"},
+			want:      nil,
+			wantErr:   ErrTagPathInvalidKeyType,
+		},
 	}
 
 	for _, tt := range tests {
@@ -257,7 +290,7 @@ func TestUnitLookUpField(t *testing.T) {
 			srcVal := reflect.ValueOf(tt.src)
 			got, err := lookUpField(srcVal, tt.pathParts)
 			if tt.wantErr != nil {
-				if err == nil || err.Error() != tt.wantErr.Error() { // Compare error messages
+				if err == nil || err.Error() != tt.wantErr.Error() {
 					t.Errorf("lookUpField() error = %v, want %v", err, tt.wantErr)
 				}
 				if got.IsValid() && tt.want != nil {

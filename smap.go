@@ -4,6 +4,7 @@ package smap
 import (
 	"errors"
 	"reflect"
+	"strconv"
 
 	"github.com/daved/vtypes"
 )
@@ -82,19 +83,18 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 		value, err := lookUpField(srcVal, pathParts)
 		if err != nil {
 			if errors.Is(err, errKeepLooking) {
-				continue // Try next path
+				continue
 			}
 			return NewMergeFieldError(err, pathParts.String(), dstField.Type().String(), "")
 		}
 		if value.IsValid() {
 			if tag.HasSkipZero() && value.IsZero() {
-				continue // Skip zero values if skipzero is set
+				continue
 			}
-			finalValue = value // Keep the last valid non-zero value
+			finalValue = value
 		}
 	}
 
-	// If no valid value found, leave pointer fields unset
 	if !finalValue.IsValid() {
 		if dstField.Kind() == reflect.Ptr {
 			return nil // Leave nil for unset pointers
@@ -102,7 +102,6 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 		return nil // Non-pointers stay zero
 	}
 
-	// Handle hydration if requested and source is a string
 	if tag.HasHydrate() && finalValue.Kind() == reflect.String {
 		hydratedPtr := reflect.New(dstField.Type())
 		hydrated := hydratedPtr.Interface()
@@ -161,7 +160,7 @@ func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, e
 				case 2:
 					if err, ok := results[1].Interface().(error); ok {
 						if err != nil {
-							return reflect.Value{}, err // Propagate method error
+							return reflect.Value{}, err
 						}
 						return results[0], nil
 					}
@@ -174,13 +173,33 @@ func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, e
 			return reflect.Value{}, errKeepLooking
 
 		case reflect.Map:
-			if value.Type().Key().Kind() != reflect.String {
+			keyType := value.Type().Key()
+			var key reflect.Value
+			// Try converting part to the map's key type
+			switch keyType.Kind() {
+			case reflect.String:
+				key = reflect.ValueOf(part)
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				if n, err := strconv.ParseInt(part, 10, 64); err == nil {
+					key = reflect.ValueOf(n).Convert(keyType)
+				}
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				if n, err := strconv.ParseUint(part, 10, 64); err == nil {
+					key = reflect.ValueOf(n).Convert(keyType)
+				}
+			case reflect.Float32, reflect.Float64:
+				if f, err := strconv.ParseFloat(part, 64); err == nil {
+					key = reflect.ValueOf(f).Convert(keyType)
+				}
+			default:
 				return reflect.Value{}, ErrTagPathInvalidKeyType
 			}
-			key := reflect.ValueOf(part)
+			if !key.IsValid() {
+				return reflect.Value{}, ErrTagPathInvalidKeyType
+			}
 			field := value.MapIndex(key)
 			if !field.IsValid() {
-				return reflect.Value{}, errKeepLooking // Unset, try next path
+				return reflect.Value{}, errKeepLooking
 			}
 			current = field
 			if isLastPart {
@@ -190,11 +209,23 @@ func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, e
 				return current, nil
 			}
 
+		case reflect.Slice, reflect.Array:
+			if idx, err := strconv.Atoi(part); err == nil && idx >= 0 && idx < value.Len() {
+				current = value.Index(idx)
+				if isLastPart {
+					for current.Kind() == reflect.Ptr && !current.IsNil() {
+						current = current.Elem()
+					}
+					return current, nil
+				}
+				continue
+			}
+			return reflect.Value{}, errKeepLooking
+
 		default:
-			return reflect.Value{}, errKeepLooking // Non-struct/map, try next path
+			return reflect.Value{}, errKeepLooking
 		}
 	}
 
-	// Should not reach here with valid pathParts
 	return reflect.Value{}, ErrTagPathNotFound
 }
