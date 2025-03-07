@@ -12,7 +12,11 @@ var (
 	ErrTagInvalid             = errors.New("invalid path in tag")
 	ErrFieldTypesIncompatible = errors.New("source field type is incompatible with destination field type")
 	ErrTagEmpty               = errors.New("empty smap tag")
-	ErrTagPathUnresolvable    = errors.New("unresolvable tag path")
+	ErrTagPathNotFound        = errors.New("tag path field not found")
+	ErrTagPathEmpty           = errors.New("tag path is empty")
+	ErrTagPathInvalidKeyType  = errors.New("tag path references map with non-string key type")
+	// errKeepLooking is unexported for internal control flow
+	errKeepLooking = errors.New("keep looking for next path")
 )
 
 // MergeFieldError is a complex error type for mergeField failures.

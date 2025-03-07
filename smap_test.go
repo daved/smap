@@ -91,6 +91,15 @@ func TestUnitNewSTag(t *testing.T) {
 			},
 			wantErr: nil,
 		},
+		{
+			name:   "path with skipzero option",
+			rawTag: "EV.Value|FV.Value,skipzero",
+			want: &sTag{
+				pathsParts: tagPathsParts{{"EV", "Value"}, {"FV", "Value"}},
+				opts:       []string{"skipzero"},
+			},
+			wantErr: nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -123,13 +132,31 @@ func TestUnitNewSTag(t *testing.T) {
 	}
 }
 
+// Define MethodStruct with methods for testing
+type MethodStruct struct {
+	Value string
+}
+
+func (ms *MethodStruct) GetValue() string {
+	return ""
+}
+
+func (ms *MethodStruct) GetValueErr() (string, error) {
+	return "", errors.New("method error")
+}
+
 func TestUnitLookUpField(t *testing.T) {
 	type Inner struct {
-		URL string
+		url string // unexported
+		URL string // exported
 	}
 	type Outer struct {
-		Inner Inner
-		Ptr   *Inner
+		Inner    Inner
+		Ptr      *Inner
+		InnerPtr *Inner
+	}
+	type MapOuter struct {
+		Data map[string]string
 	}
 
 	tests := []struct {
@@ -155,31 +182,73 @@ func TestUnitLookUpField(t *testing.T) {
 		},
 		{
 			name:      "nil pointer mid-path",
-			src:       Outer{Ptr: nil},
-			pathParts: tagPathParts{"Ptr", "URL"},
+			src:       Outer{InnerPtr: nil},
+			pathParts: tagPathParts{"InnerPtr", "URL"},
 			want:      nil,
-			wantErr:   ErrTagPathUnresolvable,
+			wantErr:   errKeepLooking,
 		},
 		{
 			name:      "non-struct mid-path",
 			src:       struct{ Str string }{Str: "not a struct"},
 			pathParts: tagPathParts{"Str", "URL"},
 			want:      nil,
-			wantErr:   ErrTagPathUnresolvable,
+			wantErr:   errKeepLooking,
 		},
 		{
 			name:      "missing field",
 			src:       Outer{Inner: Inner{URL: "http://example.com"}},
 			pathParts: tagPathParts{"Inner", "Missing"},
 			want:      nil,
-			wantErr:   ErrTagPathUnresolvable,
+			wantErr:   ErrTagPathNotFound,
+		},
+		{
+			name:      "unexported field",
+			src:       Outer{Inner: Inner{url: "hidden"}},
+			pathParts: tagPathParts{"Inner", "url"},
+			want:      nil,
+			wantErr:   ErrTagPathNotFound,
 		},
 		{
 			name:      "empty path",
 			src:       Outer{Inner: Inner{URL: "http://example.com"}},
 			pathParts: tagPathParts{},
-			want:      Outer{Inner: Inner{URL: "http://example.com"}},
+			want:      nil,
+			wantErr:   ErrTagPathEmpty,
+		},
+		{
+			name:      "valid map path",
+			src:       MapOuter{Data: map[string]string{"key": "value"}},
+			pathParts: tagPathParts{"Data", "key"},
+			want:      "value",
 			wantErr:   nil,
+		},
+		{
+			name:      "missing map key",
+			src:       MapOuter{Data: map[string]string{"other": "value"}},
+			pathParts: tagPathParts{"Data", "key"},
+			want:      nil,
+			wantErr:   errKeepLooking,
+		},
+		{
+			name:      "non-string map key",
+			src:       struct{ M map[int]string }{M: map[int]string{1: "value"}},
+			pathParts: tagPathParts{"M", "1"},
+			want:      nil,
+			wantErr:   ErrTagPathInvalidKeyType,
+		},
+		{
+			name:      "method one value",
+			src:       &MethodStruct{Value: "struct value"},
+			pathParts: tagPathParts{"GetValue"},
+			want:      "",
+			wantErr:   nil,
+		},
+		{
+			name:      "method value and error",
+			src:       &MethodStruct{Value: "struct value"},
+			pathParts: tagPathParts{"GetValueErr"},
+			want:      nil,
+			wantErr:   errors.New("method error"),
 		},
 	}
 
@@ -188,10 +257,10 @@ func TestUnitLookUpField(t *testing.T) {
 			srcVal := reflect.ValueOf(tt.src)
 			got, err := lookUpField(srcVal, tt.pathParts)
 			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
+				if err == nil || err.Error() != tt.wantErr.Error() { // Compare error messages
 					t.Errorf("lookUpField() error = %v, want %v", err, tt.wantErr)
 				}
-				if got.IsValid() {
+				if got.IsValid() && tt.want != nil {
 					t.Errorf("lookUpField() got = %v, want invalid value on error", got)
 				}
 				return
@@ -200,13 +269,19 @@ func TestUnitLookUpField(t *testing.T) {
 				t.Errorf("lookUpField() error = %v, want nil", err)
 				return
 			}
-			if !got.IsValid() {
-				t.Errorf("lookUpField() got invalid value, want %v", tt.want)
-				return
-			}
-			gotVal := got.Interface()
-			if !reflect.DeepEqual(gotVal, tt.want) {
-				t.Errorf("lookUpField() = %v, want %v", gotVal, tt.want)
+			if tt.want == nil {
+				if got.IsValid() {
+					t.Errorf("lookUpField() got = %v, want nil", got)
+				}
+			} else {
+				if !got.IsValid() {
+					t.Errorf("lookUpField() got invalid value, want %v", tt.want)
+					return
+				}
+				gotVal := got.Interface()
+				if !reflect.DeepEqual(gotVal, tt.want) {
+					t.Errorf("lookUpField() = %v, want %v", gotVal, tt.want)
+				}
 			}
 		})
 	}

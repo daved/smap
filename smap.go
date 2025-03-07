@@ -2,6 +2,7 @@
 package smap
 
 import (
+	"errors"
 	"reflect"
 
 	"github.com/daved/vtypes"
@@ -80,19 +81,29 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 	for _, pathParts := range tag.pathsParts {
 		value, err := lookUpField(srcVal, pathParts)
 		if err != nil {
+			if errors.Is(err, errKeepLooking) {
+				continue // Try next path
+			}
 			return NewMergeFieldError(err, pathParts.String(), dstField.Type().String(), "")
 		}
 		if value.IsValid() {
-			finalValue = value
+			if tag.HasSkipZero() && value.IsZero() {
+				continue // Skip zero values if skipzero is set
+			}
+			finalValue = value // Keep the last valid non-zero value
 		}
 	}
+
+	// If no valid value found, leave pointer fields unset
 	if !finalValue.IsValid() {
-		return NewMergeFieldError(ErrTagInvalid, tag.String(), dstField.Type().String(), "")
+		if dstField.Kind() == reflect.Ptr {
+			return nil // Leave nil for unset pointers
+		}
+		return nil // Non-pointers stay zero
 	}
 
 	// Handle hydration if requested and source is a string
 	if tag.HasHydrate() && finalValue.Kind() == reflect.String {
-		// Create a new value of the destination type to hydrate into
 		hydratedPtr := reflect.New(dstField.Type())
 		hydrated := hydratedPtr.Interface()
 		if err := vtypes.Hydrate(hydrated, finalValue.String()); err != nil {
@@ -110,24 +121,80 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 
 // lookUpField navigates srcVal using the path parts and returns the value.
 func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, error) {
+	if len(pathParts) == 0 {
+		return reflect.Value{}, ErrTagPathEmpty
+	}
+
 	current := srcVal
-	for _, part := range pathParts {
-		if current.Kind() == reflect.Ptr {
-			if current.IsNil() {
-				return reflect.Value{}, ErrTagPathUnresolvable
+	for i, part := range pathParts {
+		value := current
+		if value.Kind() == reflect.Ptr && value.IsNil() {
+			return reflect.Value{}, errKeepLooking // Unset, try next path
+		}
+		if value.Kind() == reflect.Ptr {
+			value = value.Elem()
+		}
+
+		isLastPart := i == len(pathParts)-1
+		switch value.Kind() {
+		case reflect.Struct:
+			// Try field first
+			field := value.FieldByName(part)
+			typ := value.Type()
+			if f, ok := typ.FieldByName(part); ok && field.IsValid() && f.PkgPath == "" { // Check if exported
+				current = field
+				if isLastPart {
+					for current.Kind() == reflect.Ptr && !current.IsNil() {
+						current = current.Elem()
+					}
+					return current, nil
+				}
+				continue
 			}
-			current = current.Elem()
-		}
-		if current.Kind() != reflect.Struct {
-			return reflect.Value{}, ErrTagPathUnresolvable
-		}
-		current = current.FieldByName(part)
-		if !current.IsValid() {
-			return reflect.Value{}, ErrTagPathUnresolvable
+			// Try method on original (possibly pointer) value
+			method := current.MethodByName(part)
+			if method.IsValid() && method.Type().NumIn() == 0 {
+				results := method.Call(nil)
+				switch len(results) {
+				case 1:
+					return results[0], nil
+				case 2:
+					if err, ok := results[1].Interface().(error); ok {
+						if err != nil {
+							return reflect.Value{}, err // Propagate method error
+						}
+						return results[0], nil
+					}
+				}
+			}
+			// No exported field or method found
+			if isLastPart {
+				return reflect.Value{}, ErrTagPathNotFound
+			}
+			return reflect.Value{}, errKeepLooking
+
+		case reflect.Map:
+			if value.Type().Key().Kind() != reflect.String {
+				return reflect.Value{}, ErrTagPathInvalidKeyType
+			}
+			key := reflect.ValueOf(part)
+			field := value.MapIndex(key)
+			if !field.IsValid() {
+				return reflect.Value{}, errKeepLooking // Unset, try next path
+			}
+			current = field
+			if isLastPart {
+				for current.Kind() == reflect.Ptr && !current.IsNil() {
+					current = current.Elem()
+				}
+				return current, nil
+			}
+
+		default:
+			return reflect.Value{}, errKeepLooking // Non-struct/map, try next path
 		}
 	}
-	if current.Kind() == reflect.Ptr && !current.IsNil() {
-		return current.Elem(), nil
-	}
-	return current, nil
+
+	// Should not reach here with valid pathParts
+	return reflect.Value{}, ErrTagPathNotFound
 }

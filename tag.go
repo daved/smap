@@ -51,26 +51,36 @@ func (t *sTag) HasHydrate() bool {
 	return false
 }
 
+// HasSkipZero checks if the "skipzero" option is present.
+func (t *sTag) HasSkipZero() bool {
+	for _, opt := range t.opts {
+		if opt == "skipzero" {
+			return true
+		}
+	}
+	return false
+}
+
 // newSTag constructs an sTag from a tag string.
 func newSTag(tag string) (*sTag, error) {
-	// Split tag into paths and options (after the first comma)
+	// Split into paths and options at the first comma
 	parts := strings.SplitN(tag, ",", 2)
 	pathsStr := strings.TrimSpace(parts[0])
 
-	// Parse paths
+	// Parse paths (split by "|")
 	paths := strings.Split(pathsStr, "|")
 	var pathsParts tagPathsParts
 	for _, path := range paths {
 		if path == "" {
 			continue
 		}
-		parts := strings.Split(path, ".")
-		for _, part := range parts {
-			if part == "" {
+		segments := strings.Split(path, ".")
+		for _, segment := range segments {
+			if segment == "" {
 				return nil, ErrTagInvalid // Empty segment (e.g., "Foo..Bar")
 			}
 		}
-		pathsParts = append(pathsParts, tagPathParts(parts))
+		pathsParts = append(pathsParts, tagPathParts(segments))
 	}
 	if len(pathsParts) == 0 {
 		return nil, ErrTagEmpty // Tag is empty or only empty segments (e.g., "", "|")

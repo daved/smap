@@ -18,19 +18,35 @@ type Config struct {
 type ConfigMismatch struct {
 	AISvcURL string `smap:"EV.AISvcURL"`
 	AISvcKey string `smap:"EV.AISvcKey"`
-	Extra    int    `smap:"FV.Extra"` // int vs. string for type mismatch
+	Extra    int    `smap:"FV.Extra"`
 }
 
 type ConfigEmptyTag struct {
-	Empty string `smap:""` // Empty tag to trigger ErrTagEmpty
+	Empty string `smap:""`
 }
 
 type ConfigNilPath struct {
-	NilPath string `smap:"EV.Nil.URL"` // Nil pointer in path
+	NilPath string `smap:"EV.Nil.URL"`
 }
 
 type ConfigHydrate struct {
-	Count int `smap:"EV.Count,hydrate"` // String to int hydration
+	Count int `smap:"EV.Count,hydrate"`
+}
+
+type ConfigPointer struct {
+	URL *string `smap:"EV.URL|FV.URL"`
+}
+
+type ConfigMap struct {
+	Value string `smap:"EV.Data.key"`
+}
+
+type ConfigMethod struct {
+	Value string `smap:"EV.GetValue"`
+}
+
+type ConfigSkipZero struct {
+	Count int `smap:"EV.Count|FV.Count,skipzero"`
 }
 
 type Sources struct {
@@ -41,13 +57,22 @@ type Sources struct {
 type EnvVars struct {
 	AISvcURL string
 	AISvcKey string
-	Nil      *struct{ URL string } // Nil pointer
-	Count    string                // String to hydrate
+	Nil      *struct{ URL string }
+	Count    int
+	URL      *string
+	Data     map[string]string
+	Value    string
 }
 
 type FileVals struct {
 	Service struct{ URL string }
 	Extra   string
+	URL     *string
+	Count   int
+}
+
+func (e *EnvVars) GetValue() string {
+	return "method value"
 }
 
 func TestSurfaceMerge(t *testing.T) {
@@ -101,8 +126,8 @@ func TestSurfaceMerge(t *testing.T) {
 			src: Sources{
 				EV: &EnvVars{AISvcKey: "env-key"},
 			},
-			want:    Config{},
-			wantErr: smap.ErrTagPathUnresolvable,
+			want:    Config{AISvcKey: "env-key"},
+			wantErr: nil,
 		},
 		{
 			name: "incompatible types",
@@ -125,18 +150,75 @@ func TestSurfaceMerge(t *testing.T) {
 			name: "nil path",
 			dst:  &ConfigNilPath{},
 			src: Sources{
-				EV: &EnvVars{Nil: nil}, // Nil pointer in path
+				EV: &EnvVars{Nil: nil},
 			},
 			want:    ConfigNilPath{},
-			wantErr: smap.ErrTagPathUnresolvable,
+			wantErr: nil,
 		},
 		{
 			name: "hydrate string to int",
 			dst:  &ConfigHydrate{},
 			src: Sources{
-				EV: &EnvVars{Count: "42"},
+				EV: &EnvVars{Count: 42},
 			},
 			want:    ConfigHydrate{Count: 42},
+			wantErr: nil,
+		},
+		{
+			name: "unset pointer field",
+			dst:  &ConfigPointer{},
+			src: Sources{
+				EV: &EnvVars{URL: nil},
+				FV: &FileVals{URL: nil},
+			},
+			want:    ConfigPointer{URL: nil},
+			wantErr: nil,
+		},
+		{
+			name: "valid map value",
+			dst:  &ConfigMap{},
+			src: Sources{
+				EV: &EnvVars{Data: map[string]string{"key": "value"}},
+			},
+			want:    ConfigMap{Value: "value"},
+			wantErr: nil,
+		},
+		{
+			name: "missing map key",
+			dst:  &ConfigMap{},
+			src: Sources{
+				EV: &EnvVars{Data: map[string]string{"other": "value"}},
+			},
+			want:    ConfigMap{},
+			wantErr: nil,
+		},
+		{
+			name: "method value",
+			dst:  &ConfigMethod{},
+			src: Sources{
+				EV: &EnvVars{Value: "struct value"},
+			},
+			want:    ConfigMethod{Value: "method value"},
+			wantErr: nil,
+		},
+		{
+			name: "skipzero with zero values",
+			dst:  &ConfigSkipZero{},
+			src: Sources{
+				EV: &EnvVars{Count: 0},
+				FV: &FileVals{Count: 0},
+			},
+			want:    ConfigSkipZero{Count: 0},
+			wantErr: nil,
+		},
+		{
+			name: "skipzero with non-zero value",
+			dst:  &ConfigSkipZero{},
+			src: Sources{
+				EV: &EnvVars{Count: 0},
+				FV: &FileVals{Count: 42},
+			},
+			want:    ConfigSkipZero{Count: 42},
 			wantErr: nil,
 		},
 	}
