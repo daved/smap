@@ -2,49 +2,12 @@
 package smap
 
 import (
-	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 )
 
 // TagKey is the struct tag key used to define source paths.
 const TagKey = "smap"
-
-// Errors for API consumers to detect via errors.Is.
-var (
-	ErrDstInvalid             = errors.New("invalid dst: non-nil struct ptr required")
-	ErrSrcInvalid             = errors.New("invalid src: struct or non-nil ptr required")
-	ErrTagInvalid             = errors.New("invalid path in tag")
-	ErrFieldTypesIncompatible = errors.New("source field type is incompatible with destination field type")
-	ErrTagEmpty               = errors.New("empty smap tag")
-	ErrTagPathUnresolvable    = errors.New("unresolvable tag path")
-)
-
-// ErrorMergeField is a complex error type for mergeField failures.
-type ErrorMergeField struct {
-	ChildErr    error
-	TagValue    string
-	DstTypeName string
-	SrcTypeName string
-}
-
-// Error implements the error interface.
-func (e *ErrorMergeField) Error() string {
-	msg := fmt.Sprintf("merge field error: %v", e.ChildErr)
-	if e.TagValue != "" {
-		msg += fmt.Sprintf(" (tag: %q)", e.TagValue)
-	}
-	if e.DstTypeName != "" && e.SrcTypeName != "" {
-		msg += fmt.Sprintf(" (dst type: %s, src type: %s)", e.DstTypeName, e.SrcTypeName)
-	}
-	return msg
-}
-
-// Unwrap returns the underlying error for errors.Is checks.
-func (e *ErrorMergeField) Unwrap() error {
-	return e.ChildErr
-}
 
 // Merge merges values from src into dst based on dst's smap struct tags.
 func Merge(dst, src interface{}) error {
@@ -112,38 +75,24 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 // mergeField sets dstField based on the smap tag paths in srcVal.
 func mergeField(dstField, srcVal reflect.Value, tagPathsParts [][]string, fullTag string) error {
 	if len(tagPathsParts) == 0 {
-		return &ErrorMergeField{
-			ChildErr: ErrTagEmpty,
-			TagValue: "",
-		}
+		return NewMergeFieldError(ErrTagEmpty, "", dstField.Type().String(), "")
 	}
 
 	var finalValue reflect.Value
 	for _, pathParts := range tagPathsParts {
 		value, err := lookUpField(srcVal, pathParts)
 		if err != nil {
-			return &ErrorMergeField{
-				ChildErr: err,
-				TagValue: strings.Join(pathParts, "."),
-			}
+			return NewMergeFieldError(err, strings.Join(pathParts, "."), dstField.Type().String(), "")
 		}
 		if value.IsValid() {
 			finalValue = value
 		}
 	}
 	if !finalValue.IsValid() {
-		return &ErrorMergeField{
-			ChildErr: ErrTagInvalid,
-			TagValue: fullTag,
-		}
+		return NewMergeFieldError(ErrTagInvalid, fullTag, dstField.Type().String(), "")
 	}
 	if !finalValue.Type().AssignableTo(dstField.Type()) {
-		return &ErrorMergeField{
-			ChildErr:    ErrFieldTypesIncompatible,
-			TagValue:    fullTag,
-			DstTypeName: dstField.Type().String(),
-			SrcTypeName: finalValue.Type().String(),
-		}
+		return NewMergeFieldError(ErrFieldTypesIncompatible, fullTag, dstField.Type().String(), finalValue.Type().String())
 	}
 	dstField.Set(finalValue)
 	return nil

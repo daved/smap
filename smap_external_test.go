@@ -97,7 +97,7 @@ func TestSurfaceMerge(t *testing.T) {
 				EV: &EnvVars{AISvcKey: "env-key"},
 			},
 			want:    Config{},
-			wantErr: smap.ErrTagPathUnresolvable, // Updated from ErrTagInvalid
+			wantErr: smap.ErrTagPathUnresolvable,
 		},
 		{
 			name: "incompatible types",
