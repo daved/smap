@@ -105,118 +105,6 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 	return nil
 }
 
-// lookUpField navigates srcVal using the path parts and returns the value.
-func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, error) {
-	if pathParts.IsEmpty() {
-		return reflect.Value{}, ErrTagPathEmpty
-	}
-
-	current := srcVal
-	for i, part := range pathParts {
-		value := current
-		if value.Kind() == reflect.Ptr && value.IsNil() {
-			return reflect.Value{}, errKeepLooking // Unset, try next path
-		}
-		if value.Kind() == reflect.Ptr {
-			value = value.Elem()
-		}
-
-		isLastPart := i == len(pathParts)-1
-		switch value.Kind() {
-		case reflect.Struct:
-			// Try field first
-			field := value.FieldByName(part)
-			typ := value.Type()
-			if f, ok := typ.FieldByName(part); ok && field.IsValid() && f.PkgPath == "" { // Check if exported
-				current = field
-				if isLastPart {
-					for current.Kind() == reflect.Ptr && !current.IsNil() {
-						current = current.Elem()
-					}
-					return current, nil
-				}
-				continue
-			}
-			// Try method on original (possibly pointer) value
-			method := current.MethodByName(part)
-			if method.IsValid() && method.Type().NumIn() == 0 {
-				results := method.Call(nil)
-				switch len(results) {
-				case 1:
-					return results[0], nil
-				case 2:
-					if err, ok := results[1].Interface().(error); ok {
-						if err != nil {
-							return reflect.Value{}, err
-						}
-						return results[0], nil
-					}
-				}
-			}
-			// No exported field or method found
-			if isLastPart {
-				return reflect.Value{}, ErrTagPathNotFound
-			}
-			return reflect.Value{}, errKeepLooking
-
-		case reflect.Map:
-			keyType := value.Type().Key()
-			var key reflect.Value
-			// Try converting part to the map's key type
-			switch keyType.Kind() {
-			case reflect.String:
-				key = reflect.ValueOf(part)
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				if n, err := strconv.ParseInt(part, 10, 64); err == nil {
-					key = reflect.ValueOf(n).Convert(keyType)
-				}
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				if n, err := strconv.ParseUint(part, 10, 64); err == nil {
-					key = reflect.ValueOf(n).Convert(keyType)
-				}
-			case reflect.Float32, reflect.Float64:
-				if f, err := strconv.ParseFloat(part, 64); err == nil {
-					key = reflect.ValueOf(f).Convert(keyType)
-				}
-			default:
-				return reflect.Value{}, ErrTagPathInvalidKeyType
-			}
-			if !key.IsValid() {
-				return reflect.Value{}, ErrTagPathInvalidKeyType
-			}
-			field := value.MapIndex(key)
-			if !field.IsValid() {
-				return reflect.Value{}, errKeepLooking
-			}
-			current = field
-			if isLastPart {
-				for current.Kind() == reflect.Ptr && !current.IsNil() {
-					current = current.Elem()
-				}
-				return current, nil
-			}
-
-		case reflect.Slice, reflect.Array:
-			if idx, err := strconv.Atoi(part); err == nil && idx >= 0 && idx < value.Len() {
-				current = value.Index(idx)
-				if isLastPart {
-					for current.Kind() == reflect.Ptr && !current.IsNil() {
-						current = current.Elem()
-					}
-					return current, nil
-				}
-				continue
-			}
-			return reflect.Value{}, errKeepLooking
-
-		default:
-			return reflect.Value{}, errKeepLooking
-		}
-	}
-
-	return reflect.Value{}, ErrTagPathNotFound
-}
-
 // findLeafValueByPathsParts finds the last valid, non-zero leaf value from the given paths.
 func findLeafValueByPathsParts(srcVal reflect.Value, tag *sTag) (reflect.Value, error) {
 	var finalValue reflect.Value
@@ -246,4 +134,160 @@ func hydratedElement(dstType reflect.Type, srcString string) (reflect.Value, err
 		return reflect.Value{}, err
 	}
 	return hydratedPtr.Elem(), nil
+}
+
+// lookUpField navigates srcVal using the path parts and returns the value.
+func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, error) {
+	if pathParts.IsEmpty() {
+		return reflect.Value{}, ErrTagPathEmpty
+	}
+
+	current := srcVal
+	for i, part := range pathParts {
+		value := current
+		if value.Kind() == reflect.Ptr && value.IsNil() {
+			return reflect.Value{}, errKeepLooking // Unset, try next path
+		}
+		if value.Kind() == reflect.Ptr {
+			value = value.Elem()
+		}
+
+		isLastPart := i == len(pathParts)-1
+		switch value.Kind() {
+		case reflect.Struct:
+			var err error
+			current, err = lookupStructFieldOrMethod(value, current, part, isLastPart)
+			if err != nil {
+				return reflect.Value{}, err
+			}
+			if isLastPart && current.IsValid() {
+				return current, nil
+			}
+			if current.IsValid() {
+				continue
+			}
+			if isLastPart {
+				return reflect.Value{}, ErrTagPathNotFound
+			}
+			return reflect.Value{}, errKeepLooking
+
+		case reflect.Map:
+			var err error
+			current, err = lookupMapValue(value, part, isLastPart)
+			if err != nil {
+				return reflect.Value{}, err
+			}
+			if isLastPart && current.IsValid() {
+				return current, nil
+			}
+			if !current.IsValid() {
+				return reflect.Value{}, errKeepLooking
+			}
+
+		case reflect.Slice, reflect.Array:
+			var err error
+			current, err = lookupSliceOrArrayElement(value, part, isLastPart)
+			if err != nil {
+				return reflect.Value{}, err
+			}
+			if isLastPart && current.IsValid() {
+				return current, nil
+			}
+			if current.IsValid() {
+				continue
+			}
+			return reflect.Value{}, errKeepLooking
+
+		default:
+			return reflect.Value{}, errKeepLooking
+		}
+	}
+
+	return reflect.Value{}, ErrTagPathNotFound
+}
+
+// lookupStructFieldOrMethod handles struct field or method lookup.
+func lookupStructFieldOrMethod(value, current reflect.Value, part string, isLastPart bool) (reflect.Value, error) {
+	// Try field first
+	field := value.FieldByName(part)
+	typ := value.Type()
+	if f, ok := typ.FieldByName(part); ok && field.IsValid() && f.PkgPath == "" { // Check if exported
+		current = field
+		if isLastPart {
+			for current.Kind() == reflect.Ptr && !current.IsNil() {
+				current = current.Elem()
+			}
+		}
+		return current, nil
+	}
+	// Try method on original (possibly pointer) value
+	method := current.MethodByName(part)
+	if method.IsValid() && method.Type().NumIn() == 0 {
+		results := method.Call(nil)
+		switch len(results) {
+		case 1:
+			return results[0], nil
+		case 2:
+			if err, ok := results[1].Interface().(error); ok {
+				if err != nil {
+					return reflect.Value{}, err
+				}
+				return results[0], nil
+			}
+		}
+	}
+	return reflect.Value{}, nil
+}
+
+// lookupMapValue handles map key lookup with type conversion.
+func lookupMapValue(value reflect.Value, part string, isLastPart bool) (reflect.Value, error) {
+	keyType := value.Type().Key()
+	var key reflect.Value
+	// Try converting part to the map's key type
+	switch keyType.Kind() {
+	case reflect.String:
+		key = reflect.ValueOf(part)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if n, err := strconv.ParseInt(part, 10, 64); err == nil {
+			key = reflect.ValueOf(n).Convert(keyType)
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if n, err := strconv.ParseUint(part, 10, 64); err == nil {
+			key = reflect.ValueOf(n).Convert(keyType)
+		}
+	case reflect.Float32, reflect.Float64:
+		if f, err := strconv.ParseFloat(part, 64); err == nil {
+			key = reflect.ValueOf(f).Convert(keyType)
+		}
+	default:
+		return reflect.Value{}, ErrTagPathInvalidKeyType
+	}
+	if !key.IsValid() {
+		return reflect.Value{}, ErrTagPathInvalidKeyType
+	}
+	field := value.MapIndex(key)
+	if !field.IsValid() {
+		return reflect.Value{}, nil
+	}
+	current := field
+	if isLastPart {
+		for current.Kind() == reflect.Ptr && !current.IsNil() {
+			current = current.Elem()
+		}
+	}
+	return current, nil
+}
+
+// lookupSliceOrArrayElement handles slice or array index lookup.
+func lookupSliceOrArrayElement(value reflect.Value, part string, isLastPart bool) (reflect.Value, error) {
+	if idx, err := strconv.Atoi(part); err == nil && idx >= 0 && idx < value.Len() {
+		current := value.Index(idx)
+		if isLastPart {
+			for current.Kind() == reflect.Ptr && !current.IsNil() {
+				current = current.Elem()
+			}
+		}
+		return current, nil
+	}
+	return reflect.Value{}, nil
 }
