@@ -10,19 +10,19 @@ func TestUnitMakeTagPathsParts(t *testing.T) {
 	tests := []struct {
 		name    string
 		tag     string
-		want    [][]string
+		want    tagPathsParts
 		wantErr error
 	}{
 		{
 			name:    "single path",
 			tag:     "EV.AISvcURL",
-			want:    [][]string{{"EV", "AISvcURL"}},
+			want:    tagPathsParts{{"EV", "AISvcURL"}},
 			wantErr: nil,
 		},
 		{
 			name:    "multiple paths",
 			tag:     "EV.AISvcURL|FV.Service.URL",
-			want:    [][]string{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
+			want:    tagPathsParts{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
 			wantErr: nil,
 		},
 		{
@@ -46,7 +46,7 @@ func TestUnitMakeTagPathsParts(t *testing.T) {
 		{
 			name:    "empty segment in middle",
 			tag:     "EV.AISvcURL||FV.Service.URL",
-			want:    [][]string{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
+			want:    tagPathsParts{{"EV", "AISvcURL"}, {"FV", "Service", "URL"}},
 			wantErr: nil,
 		},
 		{

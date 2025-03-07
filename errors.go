@@ -15,17 +15,17 @@ var (
 	ErrTagPathUnresolvable    = errors.New("unresolvable tag path")
 )
 
-// ErrorMergeField is a complex error type for mergeField failures.
-type ErrorMergeField struct {
+// MergeFieldError is a complex error type for mergeField failures.
+type MergeFieldError struct {
 	child       error  // Unexported underlying error
 	TagValue    string // Relevant tag or path portion
 	DstTypeName string // Destination type name
 	SrcTypeName string // Source type name
 }
 
-// NewMergeFieldError constructs an ErrorMergeField with the given details.
-func NewMergeFieldError(child error, tagValue, dstTypeName, srcTypeName string) *ErrorMergeField {
-	return &ErrorMergeField{
+// NewMergeFieldError constructs a MergeFieldError with the given details.
+func NewMergeFieldError(child error, tagValue, dstTypeName, srcTypeName string) *MergeFieldError {
+	return &MergeFieldError{
 		child:       child,
 		TagValue:    tagValue,
 		DstTypeName: dstTypeName,
@@ -34,12 +34,12 @@ func NewMergeFieldError(child error, tagValue, dstTypeName, srcTypeName string) 
 }
 
 // Error implements the error interface.
-func (e *ErrorMergeField) Error() string {
-	return fmt.Sprintf("merge field error: dst type: %s, src type: %s, tag: %q: %v",
-		e.DstTypeName, e.SrcTypeName, e.TagValue, e.child)
+func (e *MergeFieldError) Error() string {
+	return fmt.Sprintf("merge field (tag: %q, dst type: %s, src type: %s): %v",
+		e.TagValue, e.DstTypeName, e.SrcTypeName, e.child)
 }
 
 // Unwrap returns the underlying error for errors.Is checks.
-func (e *ErrorMergeField) Unwrap() error {
+func (e *MergeFieldError) Unwrap() error {
 	return e.child
 }

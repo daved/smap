@@ -1,13 +1,7 @@
 // Package smap provides functionality to merge struct fields based on struct tags.
 package smap
 
-import (
-	"reflect"
-	"strings"
-)
-
-// TagKey is the struct tag key used to define source paths.
-const TagKey = "smap"
+import "reflect"
 
 // Merge merges values from src into dst based on dst's smap struct tags.
 func Merge(dst, src interface{}) error {
@@ -65,7 +59,7 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 		if err != nil {
 			return err
 		}
-		if err := mergeField(dstVal.Field(i), srcVal, tagPathsParts, smapTag); err != nil {
+		if err := mergeField(dstVal.Field(i), srcVal, tagPathsParts); err != nil {
 			return err
 		}
 	}
@@ -73,7 +67,7 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 }
 
 // mergeField sets dstField based on the smap tag paths in srcVal.
-func mergeField(dstField, srcVal reflect.Value, tagPathsParts [][]string, fullTag string) error {
+func mergeField(dstField, srcVal reflect.Value, tagPathsParts tagPathsParts) error {
 	if len(tagPathsParts) == 0 {
 		return NewMergeFieldError(ErrTagEmpty, "", dstField.Type().String(), "")
 	}
@@ -82,46 +76,24 @@ func mergeField(dstField, srcVal reflect.Value, tagPathsParts [][]string, fullTa
 	for _, pathParts := range tagPathsParts {
 		value, err := lookUpField(srcVal, pathParts)
 		if err != nil {
-			return NewMergeFieldError(err, strings.Join(pathParts, "."), dstField.Type().String(), "")
+			return NewMergeFieldError(err, pathParts.String(), dstField.Type().String(), "")
 		}
 		if value.IsValid() {
 			finalValue = value
 		}
 	}
 	if !finalValue.IsValid() {
-		return NewMergeFieldError(ErrTagInvalid, fullTag, dstField.Type().String(), "")
+		return NewMergeFieldError(ErrTagInvalid, tagPathsParts.String(), dstField.Type().String(), "")
 	}
 	if !finalValue.Type().AssignableTo(dstField.Type()) {
-		return NewMergeFieldError(ErrFieldTypesIncompatible, fullTag, dstField.Type().String(), finalValue.Type().String())
+		return NewMergeFieldError(ErrFieldTypesIncompatible, tagPathsParts.String(), dstField.Type().String(), finalValue.Type().String())
 	}
 	dstField.Set(finalValue)
 	return nil
 }
 
-// makeTagPathsParts splits a smap tag into a slice of path segments, erroring on malformed tags.
-func makeTagPathsParts(tag string) ([][]string, error) {
-	paths := strings.Split(tag, "|")
-	var tagPathsParts [][]string
-	for _, path := range paths {
-		if path == "" {
-			continue
-		}
-		parts := strings.Split(path, ".")
-		for _, part := range parts {
-			if part == "" {
-				return nil, ErrTagInvalid // Empty segment (e.g., "Foo..Bar")
-			}
-		}
-		tagPathsParts = append(tagPathsParts, parts)
-	}
-	if len(tagPathsParts) == 0 {
-		return nil, ErrTagEmpty // Tag is empty or only empty segments (e.g., "", "|")
-	}
-	return tagPathsParts, nil
-}
-
 // lookUpField navigates srcVal using the path parts and returns the value.
-func lookUpField(srcVal reflect.Value, parts []string) (reflect.Value, error) {
+func lookUpField(srcVal reflect.Value, parts tagPathParts) (reflect.Value, error) {
 	current := srcVal
 	for _, part := range parts {
 		if current.Kind() == reflect.Ptr {
