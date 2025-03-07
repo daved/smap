@@ -90,7 +90,7 @@ func mergeField(dstField, srcVal reflect.Value, tagPathsParts [][]string) error 
 
 	var finalValue reflect.Value
 	for _, pathParts := range tagPathsParts {
-		value := lookupField(srcVal, pathParts)
+		value := lookUpField(srcVal, pathParts)
 		if value.IsValid() {
 			finalValue = value
 		}
@@ -127,8 +127,8 @@ func makeTagPathsParts(tag string) ([][]string, error) {
 	return tagPathsParts, nil
 }
 
-// lookupField navigates srcVal using the path parts and returns the value.
-func lookupField(srcVal reflect.Value, parts []string) reflect.Value {
+// lookUpField navigates srcVal using the path parts and returns the value.
+func lookUpField(srcVal reflect.Value, parts []string) reflect.Value {
 	current := srcVal
 	for _, part := range parts {
 		if current.Kind() == reflect.Ptr {
