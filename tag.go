@@ -61,6 +61,11 @@ func (t *sTag) HasSkipZero() bool {
 	return false
 }
 
+// IsEmpty checks if the tag has no paths.
+func (t *sTag) IsEmpty() bool {
+	return len(t.pathsParts) == 0
+}
+
 // newSTag constructs an sTag from a tag string.
 func newSTag(tag string) (*sTag, error) {
 	// Split into paths and options at the first comma

@@ -74,7 +74,7 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 
 // mergeField sets dstField based on the smap tag paths in srcVal.
 func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
-	if len(tag.pathsParts) == 0 {
+	if tag.IsEmpty() {
 		return NewMergeFieldError(ErrTagEmpty, "", dstField.Type().String(), "")
 	}
 
