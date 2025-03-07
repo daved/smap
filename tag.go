@@ -15,6 +15,11 @@ func (p tagPathParts) String() string {
 	return strings.Join(p, ".")
 }
 
+// IsEmpty checks if the tagPathParts is empty.
+func (p tagPathParts) IsEmpty() bool {
+	return len(p) == 0
+}
+
 // tagPathsParts represents multiple path segments in a smap tag.
 type tagPathsParts []tagPathParts
 
@@ -85,7 +90,11 @@ func newSTag(tag string) (*sTag, error) {
 				return nil, ErrTagInvalid // Empty segment (e.g., "Foo..Bar")
 			}
 		}
-		pathsParts = append(pathsParts, tagPathParts(segments))
+		pp := tagPathParts(segments)
+		if pp.IsEmpty() { // Optional: already caught by segment check, but explicit
+			continue
+		}
+		pathsParts = append(pathsParts, pp)
 	}
 	if len(pathsParts) == 0 {
 		return nil, ErrTagEmpty // Tag is empty or only empty segments (e.g., "", "|")

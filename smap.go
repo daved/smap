@@ -107,7 +107,7 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 
 // lookUpField navigates srcVal using the path parts and returns the value.
 func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, error) {
-	if len(pathParts) == 0 {
+	if pathParts.IsEmpty() {
 		return reflect.Value{}, ErrTagPathEmpty
 	}
 
