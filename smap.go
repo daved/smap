@@ -55,11 +55,11 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 		if !ok {
 			continue
 		}
-		tagPathsParts, err := makeTagPathsParts(smapTag)
+		pathsParts, err := makeTagPathsParts(smapTag)
 		if err != nil {
 			return err
 		}
-		if err := mergeField(dstVal.Field(i), srcVal, tagPathsParts); err != nil {
+		if err := mergeField(dstVal.Field(i), srcVal, pathsParts); err != nil {
 			return err
 		}
 	}
@@ -67,13 +67,13 @@ func mergeFields(dstVal, srcVal reflect.Value) error {
 }
 
 // mergeField sets dstField based on the smap tag paths in srcVal.
-func mergeField(dstField, srcVal reflect.Value, tagPathsParts tagPathsParts) error {
-	if len(tagPathsParts) == 0 {
+func mergeField(dstField, srcVal reflect.Value, pathsParts tagPathsParts) error {
+	if len(pathsParts) == 0 {
 		return NewMergeFieldError(ErrTagEmpty, "", dstField.Type().String(), "")
 	}
 
 	var finalValue reflect.Value
-	for _, pathParts := range tagPathsParts {
+	for _, pathParts := range pathsParts {
 		value, err := lookUpField(srcVal, pathParts)
 		if err != nil {
 			return NewMergeFieldError(err, pathParts.String(), dstField.Type().String(), "")
@@ -83,19 +83,19 @@ func mergeField(dstField, srcVal reflect.Value, tagPathsParts tagPathsParts) err
 		}
 	}
 	if !finalValue.IsValid() {
-		return NewMergeFieldError(ErrTagInvalid, tagPathsParts.String(), dstField.Type().String(), "")
+		return NewMergeFieldError(ErrTagInvalid, pathsParts.String(), dstField.Type().String(), "")
 	}
 	if !finalValue.Type().AssignableTo(dstField.Type()) {
-		return NewMergeFieldError(ErrFieldTypesIncompatible, tagPathsParts.String(), dstField.Type().String(), finalValue.Type().String())
+		return NewMergeFieldError(ErrFieldTypesIncompatible, pathsParts.String(), dstField.Type().String(), finalValue.Type().String())
 	}
 	dstField.Set(finalValue)
 	return nil
 }
 
 // lookUpField navigates srcVal using the path parts and returns the value.
-func lookUpField(srcVal reflect.Value, parts tagPathParts) (reflect.Value, error) {
+func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, error) {
 	current := srcVal
-	for _, part := range parts {
+	for _, part := range pathParts {
 		if current.Kind() == reflect.Ptr {
 			if current.IsNil() {
 				return reflect.Value{}, ErrTagPathUnresolvable

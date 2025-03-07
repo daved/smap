@@ -28,7 +28,7 @@ func (p tagPathsParts) String() string {
 // makeTagPathsParts splits a smap tag into a slice of path segments, erroring on malformed tags.
 func makeTagPathsParts(tag string) (tagPathsParts, error) {
 	paths := strings.Split(tag, "|")
-	var tagPathsParts tagPathsParts
+	var pathsParts tagPathsParts
 	for _, path := range paths {
 		if path == "" {
 			continue
@@ -39,10 +39,10 @@ func makeTagPathsParts(tag string) (tagPathsParts, error) {
 				return nil, ErrTagInvalid // Empty segment (e.g., "Foo..Bar")
 			}
 		}
-		tagPathsParts = append(tagPathsParts, tagPathParts(parts))
+		pathsParts = append(pathsParts, tagPathParts(parts))
 	}
-	if len(tagPathsParts) == 0 {
+	if len(pathsParts) == 0 {
 		return nil, ErrTagEmpty // Tag is empty or only empty segments (e.g., "", "|")
 	}
-	return tagPathsParts, nil
+	return pathsParts, nil
 }
