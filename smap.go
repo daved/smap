@@ -91,12 +91,11 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 	}
 
 	if tag.HasHydrate() && finalValue.Kind() == reflect.String {
-		hydratedPtr := reflect.New(dstField.Type())
-		hydrated := hydratedPtr.Interface()
-		if err := vtypes.Hydrate(hydrated, finalValue.String()); err != nil {
+		hydratedValue, err := hydratedElement(dstField.Type(), finalValue.String())
+		if err != nil {
 			return NewMergeFieldError(err, tag.String(), dstField.Type().String(), finalValue.Type().String())
 		}
-		finalValue = hydratedPtr.Elem()
+		finalValue = hydratedValue
 	}
 
 	if !finalValue.Type().AssignableTo(dstField.Type()) {
@@ -227,7 +226,7 @@ func findLeafValueByPathsParts(srcVal reflect.Value, tag *sTag) (reflect.Value, 
 			if errors.Is(err, errKeepLooking) {
 				continue
 			}
-			return reflect.Value{}, err // Pass error to caller for wrapping
+			return reflect.Value{}, err
 		}
 		if value.IsValid() {
 			if tag.HasSkipZero() && value.IsZero() {
@@ -237,4 +236,14 @@ func findLeafValueByPathsParts(srcVal reflect.Value, tag *sTag) (reflect.Value, 
 		}
 	}
 	return finalValue, nil
+}
+
+// hydratedElement hydrates a string value into the destination type.
+func hydratedElement(dstType reflect.Type, srcString string) (reflect.Value, error) {
+	hydratedPtr := reflect.New(dstType)
+	hydrated := hydratedPtr.Interface()
+	if err := vtypes.Hydrate(hydrated, srcString); err != nil {
+		return reflect.Value{}, err
+	}
+	return hydratedPtr.Elem(), nil
 }
