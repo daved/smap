@@ -78,21 +78,9 @@ func mergeField(dstField, srcVal reflect.Value, tag *sTag) error {
 		return NewMergeFieldError(ErrTagEmpty, "", dstField.Type().String(), "")
 	}
 
-	var finalValue reflect.Value
-	for _, pathParts := range tag.pathsParts {
-		value, err := lookUpField(srcVal, pathParts)
-		if err != nil {
-			if errors.Is(err, errKeepLooking) {
-				continue
-			}
-			return NewMergeFieldError(err, pathParts.String(), dstField.Type().String(), "")
-		}
-		if value.IsValid() {
-			if tag.HasSkipZero() && value.IsZero() {
-				continue
-			}
-			finalValue = value
-		}
+	finalValue, err := findLeafValueByPathsParts(srcVal, tag)
+	if err != nil {
+		return NewMergeFieldError(err, tag.String(), dstField.Type().String(), "")
 	}
 
 	if !finalValue.IsValid() {
@@ -228,4 +216,25 @@ func lookUpField(srcVal reflect.Value, pathParts tagPathParts) (reflect.Value, e
 	}
 
 	return reflect.Value{}, ErrTagPathNotFound
+}
+
+// findLeafValueByPathsParts finds the last valid, non-zero leaf value from the given paths.
+func findLeafValueByPathsParts(srcVal reflect.Value, tag *sTag) (reflect.Value, error) {
+	var finalValue reflect.Value
+	for _, pathParts := range tag.pathsParts {
+		value, err := lookUpField(srcVal, pathParts)
+		if err != nil {
+			if errors.Is(err, errKeepLooking) {
+				continue
+			}
+			return reflect.Value{}, err // Pass error to caller for wrapping
+		}
+		if value.IsValid() {
+			if tag.HasSkipZero() && value.IsZero() {
+				continue
+			}
+			finalValue = value
+		}
+	}
+	return finalValue, nil
 }
